@@ -8,7 +8,7 @@
 - Disaster Recovery를 위한 multi Area Zone
 - 수평 수직 확장
 - EBS 백업 지원
-- SSH는 접속 불가능 (중반에 데이터 옮기는데 있어서 문제가 있음)
+- SSH는 접속 불가능 (중반에 데이터 옮기는데 있어서 S3 활용하거나 DMS)
 
 ### 기능
 - Storage Auto Scaling 
@@ -22,3 +22,9 @@
 
 - RDS Multi AZ
   - 다른 Region으로 백업용 (고가용성을 높여준다.) + 자동 설정
+
+
+### 사용법
+- RDS 표준생성, 오토 스케일링 고려, 로컬 작업 시 퍼블릭 엑세스 고려
+- 스냅샷, Read Replicas 생성 가능
+- 엔드 포인트를 통해 DB 접속
