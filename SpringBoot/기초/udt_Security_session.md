@@ -7,27 +7,38 @@
 
 ## 설명
 - name과 password 값으로 로그인, HTML id 값 통일해줘야 함 form input
-- 
 
 ### Config
 ```java
 @Configuration
 @EnableWebSecurity
 public class SecurityConfig {
+    private static final RequestMatcher[] PUBLIC_MATCHERS = {
+            new AntPathRequestMatcher("/", "GET"),
+            new AntPathRequestMatcher("/signup", "POST"),
+            new AntPathRequestMatcher("/login", "POST"),
+            new AntPathRequestMatcher("/posts", "GET"),
+            new AntPathRequestMatcher("/posts/**", "GET")
+    };
+
+    private static final RequestMatcher[] USER_MATCHERS = {
+            new AntPathRequestMatcher("/mypage", "GET"),
+            new AntPathRequestMatcher("/posts", "POST")
+    };
+
+    private static final RequestMatcher[] ADMIN_MATCHERS = {
+            new AntPathRequestMatcher("/admin/**"),
+            new AntPathRequestMatcher("/posts/**", "DELETE")
+    };
+
     @Bean
     public BCryptPasswordEncoder passwordEncoder() {
         return new BCryptPasswordEncoder();
     }
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-        http
-                .authorizeHttpRequests((auth) -> auth
-                        .requestMatchers("/", "/login", "/signup").permitAll()
-                        .requestMatchers("/admin").hasRole("ADMIN")
-                        .requestMatchers("/mypage").hasAnyRole("ADMIN", "USER")
-                        .anyRequest().authenticated()
-                );
-
+        http.authorizeHttpRequests(this::configureAuthorizationRules);
+        
         http
                 .formLogin((auth) -> auth
                         .usernameParameter("name")
@@ -42,6 +53,17 @@ public class SecurityConfig {
 
         return http.build();
     }
+
+    private void configureAuthorizationRules(
+            AuthorizeHttpRequestsConfigurer<HttpSecurity>.AuthorizationManagerRequestMatcherRegistry auth) {
+        auth
+                .requestMatchers(PUBLIC_MATCHERS).permitAll()
+                .requestMatchers(USER_MATCHERS).hasAnyRole("USER", "ADMIN")
+                .requestMatchers(ADMIN_MATCHERS).hasRole("ADMIN");
+        
+        auth.anyRequest().authenticated();
+    }
+
 }
 ```
 
