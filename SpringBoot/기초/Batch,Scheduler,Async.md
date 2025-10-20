@@ -69,18 +69,16 @@
                 String title = "메일 제목" + user.getName();
                 String body = "안녕하세요 " + user.getName();
     
-                boolean sendSuccess = emailService.sendEmail(user.getEmail(), title, body);
-    
-                if (sendSuccess) {
-                    user.updateLastEmailSentAt();
-                    return user;
-                } else {
-                    // 발송 실패 시
-                    System.out.println("발송 실패");
-                    return null;
-                }
-            };
-        }
+            emailService.sendEmailAsync(user.getEmail(), title, body);
+
+            // 2. ItemProcessor는 메일 발송이 성공할 것이라 "가정"하고 (Optimistic)
+            //    "발송 시도 시간"을 DB에 즉시 기록합니다.
+            user.updateLastEmailSentAt();
+
+            // 3. Writer로 User 객체를 넘깁니다.
+            return user;
+        };
+   }
     ```
 
 4. ItemWriter : DB에 변경 사항을 저장한다.
@@ -138,4 +136,74 @@
     ```
 
 7. 메일 관련 비동기 처리
-- @EnableAsync 추가 및 서비스에 @Async 작성 (메일 IO 많이 먹으니 비동기 처리를 통해 백그라운드에서 실행되도록 한다.)
+   - @EnableAsync 추가 및 서비스에 @Async 작성 (메일 IO 많이 먹으니 비동기 처리를 통해 백그라운드에서 실행되도록 한다.)
+
+8. 비동기 예외 처리는 어떻게 해결할 수 있을까?
+   - 비동기 예외는 호출자에게 전달 되지 않는다. 이 어노테이션이 붙은 메서드는 별도의 스레드에서 실행되기 때문에 메인 스레드에서 캐치할 수 없어서 예외 처리 하기 위해 AsyncUncaughtExceptionHandler를 통해 전역 예외 처리를 한다.
+   - CompleteFuture : 기존 future의 문제점 해결, 후속 작업, 예외 처리 등
+
+9. 이메일 서비스
+   ```java
+   @Log4j2
+   @Service
+   @RequiredArgsConstructor
+   public class EmailService {
+   
+       private final JavaMailSender javaMailSender;
+   
+       @Value("${spring.mail.username}")
+       private String fromEmail;
+   
+       // Config를 통해 전역 예외 처리했지만 MessagingException을 발생시켜서 AsyncUncaughtExceptionHandler로 넘김
+       @Async
+       public void sendEmailAsync(String email, String title, String body) {
+           try {
+               MimeMessage mimeMessage = javaMailSender.createMimeMessage();
+               MimeMessageHelper helper = new MimeMessageHelper(mimeMessage, false, "utf-8");
+   
+               helper.setFrom(fromEmail);
+               helper.setTo(email);
+               helper.setSubject(title);
+               helper.setText(body, false);
+   
+               javaMailSender.send(mimeMessage);
+               log.info("메일 발송 성공");
+   
+           } catch (MessagingException e) {
+               log.warn("메일 발송 중 예외 발생");
+               throw new RuntimeException("Exception " + email, e);
+           }
+       }
+   }
+   ```
+   
+10. AsyncConfig
+   ```java
+   @Configuration
+   @Log4j2
+   @EnableAsync
+   public class AsyncConfig implements AsyncConfigurer {
+   
+       @Bean(name = "asyncEmailExecutor")
+       public Executor asyncEmailExecutor() {
+           ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+   
+           int processors = Runtime.getRuntime().availableProcessors();
+           log.info("Async 동작");
+   
+           executor.setCorePoolSize(processors);      // 3. 기본 스레드 수
+           executor.setMaxPoolSize(processors * 2);   // 4. 최대 스레드 수
+           executor.setQueueCapacity(500);          // 5. 대기 큐 크기
+           executor.setThreadNamePrefix("EmailAsync-"); // 스레드 이름 접두사
+           executor.initialize();
+           return executor;
+       }
+   
+       @Override
+       @NonNull
+       public AsyncUncaughtExceptionHandler getAsyncUncaughtExceptionHandler() {
+           return (ex, method, params) ->
+                   log.error("Uncaught async error in method [{}]: {}", method.getName(), ex.getMessage());
+       }
+   }
+   ```
